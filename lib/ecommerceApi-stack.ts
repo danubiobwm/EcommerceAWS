@@ -7,6 +7,7 @@ import * as lambdaNodeJS from 'aws-cdk-lib/aws-lambda-nodejs'
 
 interface ECommerceApiStackProps extends cdk.StackProps{
   productsFetchHandler: lambdaNodeJS.NodejsFunction
+  productsAdminHandler: lambdaNodeJS.NodejsFunction
 }
 
 
@@ -39,10 +40,25 @@ export class ECommerceApiStack extends cdk.Stack {
 
       const productsFetchIntegration = new apiGateway.LambdaIntegration(props.productsFetchHandler)
 
+      // GET "/products"
       const productsResource = api.root.addResource("products")
-
-
       productsResource.addMethod("GET", productsFetchIntegration)
+
+      // GET "/products/{id}"
+      const productsIdResource = productsResource.addResource("{id}")
+      productsIdResource.addMethod("GET", productsFetchIntegration)
+
+      //
+
+      const productsAdminIntegration = new apiGateway.LambdaIntegration(props.productsAdminHandler)
+
+      //POST /products
+      productsResource.addMethod("POST", productsAdminIntegration)
+
+      //PUT /products/{id}
+      productsIdResource.addMethod("PUT", productsAdminIntegration)
+      //DELETE /products/{id}
+      productsIdResource.addMethod("DELETE", productsAdminIntegration)
   }
 }
 
