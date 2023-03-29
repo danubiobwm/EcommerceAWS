@@ -3,6 +3,7 @@ import 'source-map-support/register';
 import * as cdk from 'aws-cdk-lib';
 import { ProductsAppStack } from '../lib/productsApp-stack';
 import { ECommerceApiStack } from '../lib/ecommerceApi-stack';
+import { ProductsAppLayerStack } from '../lib/productsAppLayers-stack';
 
 const app = new cdk.App();
 
@@ -16,10 +17,18 @@ const tags ={
   team: "SiecolaCode",
 }
 
+
+const productsAppLayerStack= new ProductsAppLayerStack(app, "ProductsAppLayer",{
+  tags: tags,
+  env: env
+})
+
 const productsAppStack = new ProductsAppStack(app, "ProductsAppStack", {
   tags: tags,
   env: env
 });
+
+productsAppStack.addDependency(productsAppLayerStack);
 
 const eCommerceApiStack = new ECommerceApiStack(app, "ECommerceApiStack", {
   productsFetchHandler: productsAppStack.productsFetchHandler,
