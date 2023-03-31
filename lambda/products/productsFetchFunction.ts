@@ -38,9 +38,9 @@ export async function handler(
         body: JSON.stringify(products)
       }
     }
-  } else if(event.resource === 'products/{id}') {
+  } else if(event.resource === '/products/{id}') {
     const productId = event.pathParameters!.id as string
-    console.log(`GET products/${productId}`)
+    console.log(`GET /products/${productId}`)
 
     try {
       const product = await productRepository.getProductsById(productId)
