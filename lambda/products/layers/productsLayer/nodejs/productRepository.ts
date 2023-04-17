@@ -1,3 +1,4 @@
+import { Response } from 'aws-sdk';
 import { DocumentClient } from 'aws-sdk/clients/dynamodb'
 import { v4 as uuid } from 'uuid'
 
@@ -30,7 +31,7 @@ export class ProductRepository {
     return data.Items as Product[]
   }
 
-  async getProductsById(productId: string): Promise<Product> {
+  async getProductById(productId: string): Promise<Product> {
     const data = await this.ddbClient.get({
       TableName: this.productsDdb,
       Key:{
@@ -43,6 +44,24 @@ export class ProductRepository {
     } else{
       throw new Error('Product not found')
     }
+  }
+
+  async getProductsByIds(productIds: string[]): Promise<Product[]> {
+    const keys : { id: string }[]=[]
+
+    productIds.forEach(productId => {
+      keys.push({
+        id: productId,
+      })
+    })
+    const data = await this.ddbClient.batchGet({
+      RequestItems:{
+       [this.productsDdb]: {
+        Keys: keys
+       }
+      }
+    }).promise()
+    return data.Responses![this.productsDdb] as Product[]
   }
 
   async create(product: Product): Promise<Product>{
