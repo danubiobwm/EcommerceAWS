@@ -15,7 +15,7 @@ interface OrdersAppStackProps extends cdk.StackProps{
 
 export class OrdersAppStack extends cdk.Stack{
 
-  readonly ordersHandle: lambdaNodeJS.NodejsFunction
+  readonly ordersHandler: lambdaNodeJS.NodejsFunction
 
   constructor(scope: Construct, id: string,  props: OrdersAppStackProps){
     super(scope, id, props)
@@ -50,7 +50,7 @@ export class OrdersAppStack extends cdk.Stack{
     const productsLayer = lambda.LayerVersion.fromLayerVersionArn(this, "ProductsLayersVersionArn", productsLayerArn)
 
 
-    this.ordersHandle = new lambdaNodeJS.NodejsFunction(this, "OrdersFunction",{
+    this.ordersHandler = new lambdaNodeJS.NodejsFunction(this, "OrdersFunction",{
       functionName: "OrdersFunction",
       entry: "lambda/orders/ordersFunction.ts",
       handler: "handler",
@@ -68,7 +68,7 @@ export class OrdersAppStack extends cdk.Stack{
       tracing: lambda.Tracing.ACTIVE,
       insightsVersion: lambda.LambdaInsightsVersion.VERSION_1_0_119_0
     })
-    ordersDdb.grantReadWriteData(this.ordersHandle),
-    props.productsDbd.grantReadData(this.ordersHandle)
+    ordersDdb.grantReadWriteData(this.ordersHandler),
+    props.productsDbd.grantReadData(this.ordersHandler)
   }
 }
