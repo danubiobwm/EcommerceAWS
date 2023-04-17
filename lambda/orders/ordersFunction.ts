@@ -20,7 +20,7 @@ const ddbCliente = new DynamoDB.DocumentClient();
 const orderRepository = new OrderRepository(ddbCliente, ordersDdb);
 const productRepository = new ProductRepository(ddbCliente, productsDbd);
 
-export async function handle(
+export async function handler(
   event: APIGatewayProxyEvent,
   context: Context
 ): Promise<APIGatewayProxyResult> {
