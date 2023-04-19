@@ -122,10 +122,55 @@ export class ECommerceApiStack extends cdk.Stack {
       const productsAdminIntegration = new apigateway.LambdaIntegration(props.productsAdminHandler)
 
       // POST /products
-      productsResource.addMethod("POST", productsAdminIntegration)
+      const productRequestValidator = new apigateway.RequestValidator(this, "ProductRequestValidator", {
+         restApi: api,
+         requestValidatorName: "Product Request Validator",
+         validateRequestBody: true
+      })
+      const productModel = new apigateway.Model(this, "ProductModel", {
+         modelName: "ProductModel",
+         restApi: api,
+         contentType: "application/json",
+         schema: {
+            type: apigateway.JsonSchemaType.OBJECT,
+            properties: {
+               productName: {
+                  type: apigateway.JsonSchemaType.STRING
+               },
+               code: {
+                  type: apigateway.JsonSchemaType.STRING
+               },
+               model: {
+                  type: apigateway.JsonSchemaType.STRING
+               },
+               productUrl: {
+                  type: apigateway.JsonSchemaType.STRING
+               },
+               price: {
+                  type: apigateway.JsonSchemaType.NUMBER
+               }
+            },
+            required: [
+               "productName",
+               "code"
+            ]
+         }
+      })
+
+      productsResource.addMethod("POST", productsAdminIntegration, {
+         requestValidator: productRequestValidator,
+         requestModels: {
+            "application/json": productModel
+         }
+      })
 
       // PUT /products/{id}
-      productIdResource.addMethod("PUT", productsAdminIntegration)
+      productIdResource.addMethod("PUT", productsAdminIntegration,  {
+         requestValidator: productRequestValidator,
+         requestModels: {
+            "application/json": productModel
+         }
+      })
 
       // DELETE /products/{id}
       productIdResource.addMethod("DELETE", productsAdminIntegration)
