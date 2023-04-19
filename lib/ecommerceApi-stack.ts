@@ -1,99 +1,133 @@
-import * as cdk from 'aws-cdk-lib'
-import { Construct } from 'constructs'
-import * as apigateway from 'aws-cdk-lib/aws-apigateway'
-import * as cwlogs from 'aws-cdk-lib/aws-logs'
-import * as lambdaNodeJS from 'aws-cdk-lib/aws-lambda-nodejs'
+import * as cdk from "aws-cdk-lib"
+import * as lambdaNodeJS from "aws-cdk-lib/aws-lambda-nodejs"
+import * as apigateway from "aws-cdk-lib/aws-apigateway"
+import * as cwlogs from "aws-cdk-lib/aws-logs"
+import { Construct } from "constructs"
 
-
-interface ECommerceApiStackProps extends cdk.StackProps{
-  productsFetchHandler: lambdaNodeJS.NodejsFunction
-  productsAdminHandler: lambdaNodeJS.NodejsFunction
-  ordersHandler: lambdaNodeJS.NodejsFunction
+interface ECommerceApiStackProps extends cdk.StackProps {
+   productsFetchHandler: lambdaNodeJS.NodejsFunction;
+   productsAdminHandler: lambdaNodeJS.NodejsFunction;
+   ordersHandler: lambdaNodeJS.NodejsFunction;
 }
 
-
 export class ECommerceApiStack extends cdk.Stack {
-  constructor(scope: Construct, id: string,  props: ECommerceApiStackProps ) {
-    super(scope, id, props)
 
-    const logGroup = new cwlogs.LogGroup(this, "ECommerceApiLogs")
+   constructor(scope: Construct, id: string, props: ECommerceApiStackProps) {
+      super(scope, id, props)
 
-    const api = new apigateway.RestApi(this, "ECommerceApi",
-
-      {
-        restApiName: "ECommerceApi",
-        cloudWatchRole: true,
-        deployOptions: {
-          accessLogDestination: new apigateway.LogGroupLogDestination(logGroup),
-          accessLogFormat: apigateway.AccessLogFormat.jsonWithStandardFields({
-            httpMethod: true,
-            ip: true,
-            protocol: true,
-            requestTime: true,
-            resourcePath: true,
-            responseLength: true,
-            status: true,
-            caller: true,
-            user: true
-          })
-        }
+      const logGroup = new cwlogs.LogGroup(this, "ECommerceApiLogs")
+      const api = new apigateway.RestApi(this, "ECommerceApi", {
+         restApiName: "ECommerceApi",
+         deployOptions: {
+            accessLogDestination: new apigateway.LogGroupLogDestination(logGroup),
+            accessLogFormat: apigateway.AccessLogFormat.jsonWithStandardFields({
+               httpMethod: true,
+               ip: true,
+               protocol: true,
+               requestTime: true,
+               resourcePath: true,
+               responseLength: true,
+               status: true,
+               caller: true,
+               user: true
+            })
+         }
       })
 
       this.createProductsService(props, api)
+
       this.createOrdersService(props, api)
-  }
+   }
 
-  private createOrdersService(props: ECommerceApiStackProps, api: apigateway.RestApi){
-    const ordersIntegration = new apigateway.LambdaIntegration(props.ordersHandler)
+   private createOrdersService(props: ECommerceApiStackProps, api: apigateway.RestApi) {
+      const ordersIntegration = new apigateway.LambdaIntegration(props.ordersHandler)
 
-    // RESOURCE "/orders"
+      //resource - /orders
+      const ordersResource = api.root.addResource('orders')
 
-    // get "/orders"
-    // get "/orders?email=admin@gmail.com"
-    // get "/orders?email=admin@gmail.com&orderId=123"
-    const ordersResource = api.root.addResource("orders")
-    ordersResource.addMethod("GET", ordersIntegration)
+      //GET /orders
+      //GET /orders?email=matilde@siecola.com.br
+      //GET /orders?email=matilde@siecola.com.br&orderId=123
+      ordersResource.addMethod("GET", ordersIntegration)
 
-    // post "/orders?email=admin@gmail.com&orderId=123"
-    ordersResource.addMethod("POST", ordersIntegration)
+      const orderDeletionValidator = new apigateway.RequestValidator(this, "OrderDeletionValidator", {
+         restApi: api,
+         requestValidatorName: "OrderDeletionValidator",
+         validateRequestParameters: true,
+      })
 
-    // delete "/orders?email=admin@gmail.com&orderId=123"
-    const orderDeletionValidator = new apigateway.RequestValidator(this, "OrderDeletionValidator", {
-      restApi: api,
-      requestValidatorName: "OrderDeletionValidator",
-      validateRequestParameters: true
+      //DELETE /orders?email=matilde@siecola.com.br&orderId=123
+      ordersResource.addMethod("DELETE", ordersIntegration, {
+         requestParameters: {
+            'method.request.querystring.email': true,
+            'method.request.querystring.orderId': true
+         },
+         requestValidator: orderDeletionValidator
+      })
 
-    })
-    ordersResource.addMethod("DELETE", ordersIntegration,{
-      requestParameters:{
-        'method.request.querystring.email': true,
-        'method.request.querystring.orderId': true,
-      },
-      requestValidator: orderDeletionValidator
-    })
-  }
+      //POST /orders
+      const orderRequestValidator = new apigateway.RequestValidator(this, "OrderRequestValidator", {
+         restApi: api,
+         requestValidatorName: "Order request validator",
+         validateRequestBody: true
+      })
 
-  private createProductsService(props: ECommerceApiStackProps, api: apigateway.RestApi) {
-    const productsFetchIntegration = new apigateway.LambdaIntegration(props.productsFetchHandler)
+      const orderModel = new apigateway.Model(this, "OrderModel", {
+         modelName: "OrderModel",
+         restApi: api,
+         schema: {
+            type: apigateway.JsonSchemaType.OBJECT,
+            properties: {
+               email: {
+                  type: apigateway.JsonSchemaType.STRING
+               },
+               productIds: {
+                  type: apigateway.JsonSchemaType.ARRAY,
+                  minItems: 1,
+                  items: {
+                     type: apigateway.JsonSchemaType.STRING
+                  }
+               },
+               payment: {
+                  type: apigateway.JsonSchemaType.STRING,
+                  enum: ["CASH", "DEBIT_CARD", "CREDIT_CARD"]
+               }
+            },
+            required: [
+               "email",
+               "productIds",
+               "payment"
+            ]
+         }
+      })
+      ordersResource.addMethod("POST", ordersIntegration, {
+         requestValidator: orderRequestValidator,
+         requestModels: {
+            "application/json": orderModel
+         }
+      })
+   }
 
-    // GET "/products"
-    const productsResource = api.root.addResource("products")
-    productsResource.addMethod("GET", productsFetchIntegration)
+   private createProductsService(props: ECommerceApiStackProps, api: apigateway.RestApi) {
+      const productsFetchIntegration = new apigateway.LambdaIntegration(props.productsFetchHandler)
 
-    // GET "/products/{id}"
-    const productsIdResource = productsResource.addResource("{id}")
-    productsIdResource.addMethod("GET", productsFetchIntegration)
+      // "/products"
+      const productsResource = api.root.addResource("products")
+      productsResource.addMethod("GET", productsFetchIntegration)
 
-    //
-    const productsAdminIntegration = new apigateway.LambdaIntegration(props.productsAdminHandler)
+      // GET /products/{id}
+      const productIdResource = productsResource.addResource("{id}")
+      productIdResource.addMethod("GET", productsFetchIntegration)
 
-    //POST /products
-    productsResource.addMethod("POST", productsAdminIntegration)
+      const productsAdminIntegration = new apigateway.LambdaIntegration(props.productsAdminHandler)
 
-    //PUT /products/{id}
-    productsIdResource.addMethod("PUT", productsAdminIntegration)
-    //DELETE /products/{id}
-    productsIdResource.addMethod("DELETE", productsAdminIntegration)
-  }
+      // POST /products
+      productsResource.addMethod("POST", productsAdminIntegration)
+
+      // PUT /products/{id}
+      productIdResource.addMethod("PUT", productsAdminIntegration)
+
+      // DELETE /products/{id}
+      productIdResource.addMethod("DELETE", productsAdminIntegration)
+   }
 }
-
