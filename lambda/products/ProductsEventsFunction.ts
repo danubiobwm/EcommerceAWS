@@ -5,7 +5,7 @@ import * as AWSRay from 'aws-xray-sdk'
 
 AWSRay.captureAWS(require('aws-sdk'))
 
-const eventsDdb = process.env.EVENTS_DDB!
+const EventsDbd = process.env.EVENTS_DDB!
 const ddbClient = new DynamoDB.DocumentClient();
 
 export async function handle(event: ProductEvent, context: Context, callback: Callback): Promise<void> {
@@ -27,7 +27,7 @@ function createEvent(event: ProductEvent) {
   const ttl = ~~(timestamp / 1000) + 5 * 60
 
   return ddbClient.put({
-    TableName: eventsDdb,
+    TableName: EventsDbd,
     Item:{
       pk: `#product_${event.productCode}`,
       sk: `${event.eventType}`,

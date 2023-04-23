@@ -1,7 +1,7 @@
 export enum ProductEventType {
-  CREATE = "PRODUCT_CREATE",
-  UPDATE = "PRODUCT_UPDATE",
-  DELETED = "PRODUCT_DELETED",
+  CREATED = "PRODUCT_CREATED",
+  UPDATED = "PRODUCT_UPDATED",
+  DELETED = "PRODUCT_DELETED"
 }
 
 export interface ProductEvent {
@@ -9,6 +9,6 @@ export interface ProductEvent {
   eventType: ProductEventType;
   productId: string;
   productCode: string;
-  productPrice: Number;
+  productPrice: number;
   email: string;
 }

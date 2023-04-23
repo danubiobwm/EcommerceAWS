@@ -40,7 +40,7 @@ export class ECommerceApiStack extends cdk.Stack {
    }
 
    private createOrdersService(props: ECommerceApiStackProps, api: apigateway.RestApi) {
-      const ordersIntegration = new apigateway.LambdaIntegration(props.ordersHandler)
+      const ordersIntegration = new apigateway.LambdaIntegration(props.ordersHandler)      
 
       //resource - /orders
       const ordersResource = api.root.addResource('orders')
@@ -121,10 +121,9 @@ export class ECommerceApiStack extends cdk.Stack {
 
       const productsAdminIntegration = new apigateway.LambdaIntegration(props.productsAdminHandler)
 
-      // POST /products
       const productRequestValidator = new apigateway.RequestValidator(this, "ProductRequestValidator", {
          restApi: api,
-         requestValidatorName: "Product Request Validator",
+         requestValidatorName: "Product request validator",
          validateRequestBody: true
       })
       const productModel = new apigateway.Model(this, "ProductModel", {
@@ -156,7 +155,7 @@ export class ECommerceApiStack extends cdk.Stack {
             ]
          }
       })
-
+      // POST /products
       productsResource.addMethod("POST", productsAdminIntegration, {
          requestValidator: productRequestValidator,
          requestModels: {
@@ -165,7 +164,7 @@ export class ECommerceApiStack extends cdk.Stack {
       })
 
       // PUT /products/{id}
-      productIdResource.addMethod("PUT", productsAdminIntegration,  {
+      productIdResource.addMethod("PUT", productsAdminIntegration, {
          requestValidator: productRequestValidator,
          requestModels: {
             "application/json": productModel
