@@ -57,7 +57,7 @@ export class OrdersAppStack extends cdk.Stack {
          .valueForStringParameter(this, "OrderEventsRepositoryLayerVersionArn")
       const orderEventsRepositoryLayer = lambda.LayerVersion
          .fromLayerVersionArn(this, "OrderEventsRepositoryLayerVersionArn", orderEventsRepositoryLayerArn)
-         
+
       //Products Layer
       const productsLayerArn = ssm.StringParameter
          .valueForStringParameter(this, "ProductsLayerVersionArn")
@@ -77,13 +77,13 @@ export class OrdersAppStack extends cdk.Stack {
          timeout: cdk.Duration.seconds(2),
          bundling: {
             minify: true,
-            sourceMap: false               
-         },            
+            sourceMap: false
+         },
          environment: {
             PRODUCTS_DDB: props.productsDdb.tableName,
             ORDERS_DDB: ordersDdb.tableName,
             ORDER_EVENTS_TOPIC_ARN: ordersTopic.topicArn
-         }, 
+         },
          layers: [ordersLayer, productsLayer, ordersApiLayer, orderEventsLayer],
          tracing: lambda.Tracing.ACTIVE,
          insightsVersion: lambda.LambdaInsightsVersion.VERSION_1_0_119_0
@@ -101,11 +101,11 @@ export class OrdersAppStack extends cdk.Stack {
          timeout: cdk.Duration.seconds(2),
          bundling: {
             minify: true,
-            sourceMap: false               
-         },            
+            sourceMap: false
+         },
          environment: {
             EVENTS_DDB: props.eventsDdb.tableName
-         }, 
+         },
          layers: [orderEventsLayer, orderEventsRepositoryLayer],
          tracing: lambda.Tracing.ACTIVE,
          insightsVersion: lambda.LambdaInsightsVersion.VERSION_1_0_119_0
@@ -123,5 +123,29 @@ export class OrdersAppStack extends cdk.Stack {
          }
       })
       orderEventsHandler.addToRolePolicy(eventsDdbPolicy)
+
+
+
+      const billingHandler = new lambdaNodeJS.NodejsFunction(this, "BillingFunction", {
+         functionName: "BillingFunction",
+         entry: "lambda/orders/billingFunction.ts",
+         handler: "handler",
+         memorySize: 128,
+         timeout: cdk.Duration.seconds(2),
+         bundling: {
+            minify: true,
+            sourceMap: false
+         },
+         tracing: lambda.Tracing.ACTIVE,
+         insightsVersion: lambda.LambdaInsightsVersion.VERSION_1_0_119_0
+      })
+
+      ordersTopic.addSubscription(new subs.LambdaSubscription(billingHandler,{
+         filterPolicy:{
+            eventType: sns.SubscriptionFilter.stringFilter({
+               allowlist: ['ORDER_CREATED'],
+            })
+         }
+      }))
    }
 }
