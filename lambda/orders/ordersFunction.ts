@@ -1,6 +1,8 @@
 import { DynamoDB, SNS } from "aws-sdk"
 import { Order, OrderRepository } from "/opt/nodejs/ordersLayer"
 import { Product, ProductRepository } from "/opt/nodejs/productsLayer"
+import { v4 as uuid } from "uuid"
+
 import * as AWSXRay from "aws-xray-sdk"
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from "aws-lambda"
 import { CarrierType, OrderProductResponse, OrderRequest, OrderResponse, PaymentType, ShippingType } from "/opt/nodejs/ordersApiLayer"
@@ -18,7 +20,7 @@ const snsClient = new SNS()
 const orderRepository = new OrderRepository(ddbClient, ordersDdb)
 const productRepository = new ProductRepository(ddbClient, productsDdb)
 
-export async function handler(event: APIGatewayProxyEvent, context: Context): 
+export async function handler(event: APIGatewayProxyEvent, context: Context):
    Promise<APIGatewayProxyResult> {
 
    const method = event.httpMethod
@@ -39,7 +41,7 @@ export async function handler(event: APIGatewayProxyEvent, context: Context):
                   return {
                      statusCode: 200,
                      body: JSON.stringify(convertToOrderResponse(order))
-                  }   
+                  }
                } catch (error) {
                   console.log((<Error>error).message)
                   return {
@@ -70,16 +72,19 @@ export async function handler(event: APIGatewayProxyEvent, context: Context):
       const products = await productRepository.getProductsByIds(orderRequest.productIds)
       if (products.length === orderRequest.productIds.length) {
          const order = buildOrder(orderRequest, products)
-         const orderCreated = await orderRepository.createOrder(order)
 
-         const eventResult = await sendOrderEvent(orderCreated, OrderEventType.CREATED, lambdaRequestId)
+         const orderCreatedPromise = orderRepository.createOrder(order)
+         const eventResultPromise = sendOrderEvent(order, OrderEventType.CREATED, lambdaRequestId)
+
+         const results = await Promise.all([orderCreatedPromise, eventResultPromise])
+
          console.log(
-            `Order created event sent - OrderId: ${orderCreated.sk} 
-            - MessageId: ${eventResult.MessageId}`
+            `Order created event sent - OrderId: ${order.sk}
+            - MessageId: ${results[1].MessageId}`
          )
          return {
             statusCode: 201,
-            body: JSON.stringify(convertToOrderResponse(orderCreated))
+            body: JSON.stringify(convertToOrderResponse(order))
          }
       } else {
          return {
@@ -97,14 +102,14 @@ export async function handler(event: APIGatewayProxyEvent, context: Context):
 
          const eventResult = await sendOrderEvent(orderDelete, OrderEventType.DELETED, lambdaRequestId)
          console.log(
-            `Order deleted event sent - OrderId: ${orderDelete.sk} 
+            `Order deleted event sent - OrderId: ${orderDelete.sk}
             - MessageId: ${eventResult.MessageId}`
          )
-         
+
          return {
             statusCode: 200,
             body: JSON.stringify(convertToOrderResponse(orderDelete))
-         }   
+         }
       } catch (error) {
          console.log((<Error>error).message)
          return {
@@ -145,7 +150,7 @@ function sendOrderEvent(order: Order, eventType: OrderEventType, lambdaRequestId
    }).promise()
 }
 
-function convertToOrderResponse (order: Order): OrderResponse {
+function convertToOrderResponse(order: Order): OrderResponse {
    const orderProducts: OrderProductResponse[] = []
    order.products.forEach((product) => {
       orderProducts.push({
@@ -184,6 +189,8 @@ function buildOrder(orderRequest: OrderRequest, products: Product[]): Order {
    })
    const order: Order = {
       pk: orderRequest.email,
+      sk: uuid(),
+      createdAt: Date.now(),
       billing: {
          payment: orderRequest.payment,
          totalPrice: totalPrice

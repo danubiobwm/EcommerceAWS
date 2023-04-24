@@ -10,6 +10,7 @@ import * as dynamodb from "aws-cdk-lib/aws-dynamodb"
 import * as ssm from "aws-cdk-lib/aws-ssm"
 
 import { Construct } from "constructs"
+import * as iam from "aws-cdk-lib/aws-iam";
 
 interface ProductsAppStackProps extends cdk.StackProps {
    eventsDdb: dynamodb.Table
@@ -38,12 +39,12 @@ export class ProductsAppStack extends cdk.Stack {
       //Products Layer
       const productsLayerArn = ssm.StringParameter.valueForStringParameter(this, "ProductsLayerVersionArn")
       const productsLayer = lambda.LayerVersion.fromLayerVersionArn(this, "ProductsLayerVersionArn", productsLayerArn)
-      
+
       //Product Events Layer
       const productEventsLayerArn = ssm.StringParameter.valueForStringParameter(this, "ProductEventsLayerVersionArn")
       const productEventsLayer = lambda.LayerVersion.fromLayerVersionArn(this, "ProductEventsLayerVersionArn", productEventsLayerArn)
 
-      const productEventsHandler = new lambdaNodeJS.NodejsFunction(this, 
+      const productEventsHandler = new lambdaNodeJS.NodejsFunction(this,
          "ProductsEventsFunction", {
             functionName: "ProductsEventsFunction",
             entry: "lambda/products/productEventsFunction.ts",
@@ -52,18 +53,29 @@ export class ProductsAppStack extends cdk.Stack {
             timeout: cdk.Duration.seconds(2),
             bundling: {
                minify: true,
-               sourceMap: false               
-            },            
+               sourceMap: false
+            },
             environment: {
                EVENTS_DDB: props.eventsDdb.tableName
-            }, 
+            },
             layers: [productEventsLayer],
             tracing: lambda.Tracing.ACTIVE,
             insightsVersion: lambda.LambdaInsightsVersion.VERSION_1_0_119_0
       })
-      props.eventsDdb.grantWriteData(productEventsHandler)
+      //props.eventsDdb.grantWriteData(productEventsHandler)
+      const eventsDdbPolicy = new iam.PolicyStatement({
+         effect: iam.Effect.ALLOW,
+         actions: ["dynamodb:PutItem"],
+         resources: [props.eventsDdb.tableArn],
+         conditions: {
+            ['ForAllValues:StringLike']: {
+               'dynamodb:LeadingKeys': ['#product_*']
+            }
+         }
+      })
+      productEventsHandler.addToRolePolicy(eventsDdbPolicy)
 
-      this.productsFetchHandler = new lambdaNodeJS.NodejsFunction(this, 
+      this.productsFetchHandler = new lambdaNodeJS.NodejsFunction(this,
          "ProductsFetchFunction", {
             functionName: "ProductsFetchFunction",
             entry: "lambda/products/productsFetchFunction.ts",
@@ -72,18 +84,18 @@ export class ProductsAppStack extends cdk.Stack {
             timeout: cdk.Duration.seconds(5),
             bundling: {
                minify: true,
-               sourceMap: false               
-            },            
+               sourceMap: false
+            },
             environment: {
                PRODUCTS_DDB: this.productsDdb.tableName
-            }, 
+            },
             layers: [productsLayer],
             tracing: lambda.Tracing.ACTIVE,
             insightsVersion: lambda.LambdaInsightsVersion.VERSION_1_0_119_0
          })
       this.productsDdb.grantReadData(this.productsFetchHandler)
 
-      this.productsAdminHandler = new lambdaNodeJS.NodejsFunction(this, 
+      this.productsAdminHandler = new lambdaNodeJS.NodejsFunction(this,
          "ProductsAdminFunction", {
             functionName: "ProductsAdminFunction",
             entry: "lambda/products/productsAdminFunction.ts",
@@ -92,8 +104,8 @@ export class ProductsAppStack extends cdk.Stack {
             timeout: cdk.Duration.seconds(5),
             bundling: {
                minify: true,
-               sourceMap: false               
-            },            
+               sourceMap: false
+            },
             environment: {
                PRODUCTS_DDB: this.productsDdb.tableName,
                PRODUCT_EVENTS_FUNCTION_NAME: productEventsHandler.functionName
@@ -101,7 +113,7 @@ export class ProductsAppStack extends cdk.Stack {
             layers: [productsLayer, productEventsLayer],
             tracing: lambda.Tracing.ACTIVE,
             insightsVersion: lambda.LambdaInsightsVersion.VERSION_1_0_119_0
-         }) 
+         })
       this.productsDdb.grantWriteData(this.productsAdminHandler)
       productEventsHandler.grantInvoke(this.productsAdminHandler)
    }

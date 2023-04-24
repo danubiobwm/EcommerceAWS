@@ -1,5 +1,4 @@
 import { DocumentClient } from "aws-sdk/clients/dynamodb"
-import { v4 as uuid } from "uuid"
 
 export interface OrderProduct {
    code: string,
@@ -8,8 +7,8 @@ export interface OrderProduct {
 
 export interface Order {
    pk: string,
-   sk?: string,
-   createdAt?: number,
+   sk: string,
+   createdAt: number,
    shipping: {
       type: "URGENT" | "ECONOMIC",
       carrier: "CORREIOS" | "FEDEX"
@@ -31,8 +30,6 @@ export class OrderRepository {
    }
 
    async createOrder(order: Order): Promise<Order> {
-      order.sk = uuid()
-      order.createdAt = Date.now()
       await this.ddbClient.put({
          TableName: this.ordersDdb,
          Item: order
@@ -53,7 +50,7 @@ export class OrderRepository {
          KeyConditionExpression: "pk = :email",
          ExpressionAttributeValues: {
             ":email": email
-         },         
+         },
       }).promise()
       return data.Items as Order[]
    }
@@ -80,12 +77,12 @@ export class OrderRepository {
             pk: email,
             sk: orderId
          },
-         ReturnValues: "ALL_OLD"          
+         ReturnValues: "ALL_OLD"
       }).promise()
       if (data.Attributes) {
          return data.Attributes as Order
       } else {
          throw new Error ('Order not found')
       }
-   } 
+   }
 }
