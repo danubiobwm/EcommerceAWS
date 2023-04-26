@@ -12,6 +12,7 @@ export async function handle(event: ProductEvent, context: Context, callback: Ca
 
   console.log(event);
 
+
   console.log(`Lambda requestId: ${context.awsRequestId}`);
 
   await createEvent(event)
