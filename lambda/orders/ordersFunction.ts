@@ -127,7 +127,7 @@ export async function handler(event: APIGatewayProxyEvent, context: Context):
 
 function sendOrderEvent(order: Order, eventType: OrderEventType, lambdaRequestId: string) {
    const productCodes: string[] = []
-   order.products.forEach((product) => {
+   order.products?.forEach((product) => {
       productCodes.push(product.code)
    })
    const orderEvent: OrderEvent = {
@@ -158,7 +158,7 @@ function sendOrderEvent(order: Order, eventType: OrderEventType, lambdaRequestId
 
 function convertToOrderResponse(order: Order): OrderResponse {
    const orderProducts: OrderProductResponse[] = []
-   order.products.forEach((product) => {
+   order.products?.forEach((product) => {
       orderProducts.push({
          code: product.code,
          price: product.price
@@ -168,7 +168,7 @@ function convertToOrderResponse(order: Order): OrderResponse {
       email: order.pk,
       id: order.sk!,
       createdAt: order.createdAt!,
-      products: orderProducts,
+      products: orderProducts.length ? orderProducts : undefined,
       billing: {
          payment: order.billing.payment as PaymentType,
          totalPrice: order.billing.totalPrice

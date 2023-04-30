@@ -4,12 +4,12 @@ export enum PaymentType {
    CREDIT_CARD = "CREDIT_CARD"
 }
 
-export enum ShippingType { 
+export enum ShippingType {
    ECONOMIC = "ECONOMIC",
    URGENT = "URGENT"
 }
 
-export enum CarrierType { 
+export enum CarrierType {
    CORREIOS = "CORREIOS",
    FEDEX = "FEDEX"
 }
@@ -41,5 +41,5 @@ export interface OrderResponse {
       type: ShippingType,
       carrier: CarrierType
    },
-   products: OrderProductResponse[]
+   products?: OrderProductResponse[]
 }
