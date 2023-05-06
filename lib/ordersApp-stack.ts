@@ -18,6 +18,8 @@ interface OrdersAppStackProps extends cdk.StackProps {
 
 export class OrdersAppStack extends cdk.Stack {
    readonly ordersHandler: lambdaNodeJS.NodejsFunction
+   readonly orderEventsFetchHandler: lambdaNodeJS.NodejsFunction
+
 
    constructor(scope: Construct, id: string, props: OrdersAppStackProps) {
       super(scope, id, props)
@@ -207,5 +209,30 @@ export class OrdersAppStack extends cdk.Stack {
       })
 
       orderEmailsHandler.addToRolePolicy(orderEmailSesPolicy)
+
+
+      this.orderEventsFetchHandler = new lambdaNodeJS.NodejsFunction(this, "OrderEventsFetchFunction", {
+         functionName: "OrderEventsFetchFunction",
+         entry: "lambda/orders/orderEventsFetchFunction.ts",
+         handler: "handler",
+         memorySize: 128,
+         timeout: cdk.Duration.seconds(2),
+         bundling: {
+            minify: true,
+            sourceMap: false
+         },
+         environment:{
+            EVENTS_DDB: props.eventsDdb.tableName
+         },
+         layers: [orderEventsRepositoryLayer],
+         tracing: lambda.Tracing.ACTIVE,
+         insightsVersion: lambda.LambdaInsightsVersion.VERSION_1_0_119_0
+      })
+      const eventsFetchDdbPolicy = new iam.PolicyStatement({
+         effect: iam.Effect.ALLOW,
+         actions: ['dynamodb:Query'],
+         resources: [`${props.eventsDdb.tableArn}/index/emailIndex`]
+      })
+      this.orderEventsFetchHandler.addToRolePolicy(eventsFetchDdbPolicy)
    }
 }

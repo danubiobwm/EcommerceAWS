@@ -8,6 +8,7 @@ interface ECommerceApiStackProps extends cdk.StackProps {
    productsFetchHandler: lambdaNodeJS.NodejsFunction;
    productsAdminHandler: lambdaNodeJS.NodejsFunction;
    ordersHandler: lambdaNodeJS.NodejsFunction;
+   orderEventsFetchHandler: lambdaNodeJS.NodejsFunction;
 }
 
 export class ECommerceApiStack extends cdk.Stack {
@@ -40,7 +41,7 @@ export class ECommerceApiStack extends cdk.Stack {
    }
 
    private createOrdersService(props: ECommerceApiStackProps, api: apigateway.RestApi) {
-      const ordersIntegration = new apigateway.LambdaIntegration(props.ordersHandler)      
+      const ordersIntegration = new apigateway.LambdaIntegration(props.ordersHandler)
 
       //resource - /orders
       const ordersResource = api.root.addResource('orders')
@@ -106,6 +107,29 @@ export class ECommerceApiStack extends cdk.Stack {
             "application/json": orderModel
          }
       })
+
+      // /orders/events
+      const ordersEventsResource = ordersResource.addResource("events")
+
+      const orderEventsFetchValidator = new apigateway.RequestValidator(this, "OrderEventsFetchValidator", {
+         restApi: api,
+         requestValidatorName: "OrderEventsFetchValidator",
+         validateRequestParameters: true
+      })
+
+      const orderEventsFunctionIntegration = new apigateway.LambdaIntegration(props.orderEventsFetchHandler)
+
+      // GET /orders/events?email=admin@gmail.com
+      // GET /orders/events?email=admin@gmail.com&eventType=ORDER_CREATED
+
+      ordersEventsResource.addMethod('GET', orderEventsFunctionIntegration,{
+         requestParameters:{
+            'method.request.querystring.email': true,
+            'method.request.querystring.eventType': false,
+         },
+         requestValidator: orderEventsFetchValidator
+      })
+
    }
 
    private createProductsService(props: ECommerceApiStackProps, api: apigateway.RestApi) {
