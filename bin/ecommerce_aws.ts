@@ -7,10 +7,12 @@ import { ProductsAppLayersStack } from '../lib/productsAppLayers-stack';
 import { EventsDbdStack } from '../lib/eventsDbd-stack'
 import { OrdersAppLayersStack } from '../lib/ordersAppLayers-stack';
 import { OrdersAppStack } from '../lib/ordersApp-stack';
+import { InvoiceWSApiStack } from '../lib/invoiceWSApi-stack'
+import { InvoicesAppLayerStack } from '../lib/invoicesAppLayers-stack'
 
 const app = new cdk.App();
 
-const env: cdk.Environment ={
+const env: cdk.Environment = {
   account: "856247121966",
   region: "us-east-1",
 }
@@ -66,3 +68,21 @@ const eCommerceApiStack = new ECommerceApiStack(app, "ECommerceApi", {
 })
 eCommerceApiStack.addDependency(productsAppStack)
 eCommerceApiStack.addDependency(ordersAppStack)
+
+const invoicesAppLayersStack = new InvoicesAppLayerStack(app, "InvoicesAppLayer", {
+  tags: {
+    const: "InvoiceApp",
+    team: "SiecolaCode"
+  },
+  env: env
+})
+
+const invoiceWSApiStack = new InvoiceWSApiStack(app, "InvoiceApi", {
+  tags: {
+    const: "InvoiceApp",
+    team: "SiecolaCode"
+  },
+  env: env
+})
+
+invoiceWSApiStack.addDependency(invoicesAppLayersStack)
