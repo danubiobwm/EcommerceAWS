@@ -161,7 +161,7 @@ export class InvoiceWSApiStack extends cdk.Stack {
     //Invoice Import handler
     const invoiceImportHandler = new lambdaNodeJs.NodejsFunction(this, "InvoiceImportHandler", {
       functionName: "InvoiceImportHandler",
-      entry: "lambda/invoices/invoiceImportHandler.ts",
+      entry: "lambda/invoices/invoiceImportFunction.ts",
       handler: "handler",
       memorySize: 128,
       timeout: cdk.Duration.seconds(2),
