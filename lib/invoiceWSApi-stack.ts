@@ -8,10 +8,16 @@ import * as s3 from 'aws-cdk-lib/aws-s3'
 import * as iam from 'aws-cdk-lib/aws-iam'
 import * as s3n from 'aws-cdk-lib/aws-s3-notifications'
 import *  as ssm from 'aws-cdk-lib/aws-ssm'
+import *  as sqs from 'aws-cdk-lib/aws-sqs'
+import *  as lambdaEventSource from 'aws-cdk-lib/aws-lambda-event-sources'
 import { Construct } from 'constructs'
 
+interface InvoiceWSApiStackProps extends cdk.StackProps {
+  eventsDdb: dynamodb.Table
+}
+
 export class InvoiceWSApiStack extends cdk.Stack {
-  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+  constructor(scope: Construct, id: string, props: InvoiceWSApiStackProps) {
     super(scope, id, props)
 
     //Invoice Transaction Layer
@@ -22,15 +28,15 @@ export class InvoiceWSApiStack extends cdk.Stack {
 
     //Invoice Layer
     const invoiceLayerArn = ssm.StringParameter
-    .valueForStringParameter(this, "InvoiceRepositoryLayerVersionArn")
+      .valueForStringParameter(this, "InvoiceRepositoryLayerVersionArn")
     const invoiceLayer = lambda.LayerVersion
-    .fromLayerVersionArn(this, "InvoiceRepositoryLayer", invoiceLayerArn)
+      .fromLayerVersionArn(this, "InvoiceRepositoryLayer", invoiceLayerArn)
 
     //Invoice WebSocket API
     const invoiceWSConnectionLayerArn = ssm.StringParameter
-    .valueForStringParameter(this, "InvoiceWSConnectionLayerVersionArn")
+      .valueForStringParameter(this, "InvoiceWSConnectionLayerVersionArn")
     const invoiceWSConnectionLayer = lambda.LayerVersion
-    .fromLayerVersionArn(this, "InvoiceWSConnectionLayer", invoiceWSConnectionLayerArn)
+      .fromLayerVersionArn(this, "InvoiceWSConnectionLayer", invoiceWSConnectionLayerArn)
 
 
     //Invoice an invoice transaction DDB
@@ -48,7 +54,8 @@ export class InvoiceWSApiStack extends cdk.Stack {
         type: dynamodb.AttributeType.STRING
       },
       timeToLiveAttribute: "ttl",
-      removalPolicy: cdk.RemovalPolicy.DESTROY
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      stream: dynamodb.StreamViewType.NEW_AND_OLD_IMAGES
     })
 
     //Invoice bucket
@@ -64,7 +71,6 @@ export class InvoiceWSApiStack extends cdk.Stack {
     })
 
     //WebSocket connection handler
-
     const connectionHandler = new lambdaNodeJs.NodejsFunction(this, "InvoiceConnectionFunction", {
       functionName: "InvoiceConnectionFunction",
       entry: "lambda/invoices/invoiceConnectionFunction.ts",
@@ -127,7 +133,7 @@ export class InvoiceWSApiStack extends cdk.Stack {
         minify: true,
         sourceMap: false
       },
-      layers:[invoiceTransactionLayer, invoiceWSConnectionLayer],
+      layers: [invoiceTransactionLayer, invoiceWSConnectionLayer],
       tracing: lambda.Tracing.ACTIVE,
       environment: {
         INVOICE_DDB: invoicesDdb.tableName,
@@ -170,7 +176,7 @@ export class InvoiceWSApiStack extends cdk.Stack {
         sourceMap: false
       },
       tracing: lambda.Tracing.ACTIVE,
-      layers:[invoiceLayer, invoiceTransactionLayer, invoiceWSConnectionLayer],
+      layers: [invoiceLayer, invoiceTransactionLayer, invoiceWSConnectionLayer],
       environment: {
         INVOICE_DDB: invoicesDdb.tableName,
         INVOICE_WSAPI_ENDPOINT: wsApiEndPoint
@@ -200,7 +206,7 @@ export class InvoiceWSApiStack extends cdk.Stack {
         minify: true,
         sourceMap: false
       },
-      layers:[invoiceTransactionLayer, invoiceWSConnectionLayer],
+      layers: [invoiceTransactionLayer, invoiceWSConnectionLayer],
       tracing: lambda.Tracing.ACTIVE,
       environment: {
         INVOICE_DDB: invoicesDdb.tableName,
@@ -230,5 +236,48 @@ export class InvoiceWSApiStack extends cdk.Stack {
       integration: new apigatewayv2_integrations.WebSocketLambdaIntegration("cancelImportHandler", cancelImportHandler)
     })
 
+
+    const invoiceEventsHandler = new lambdaNodeJs.NodejsFunction(this, "InvoiceEventsFunction", {
+      functionName: "InvoiceEventsFunction",
+      entry: "lambda/invoices/invoiceEventsFunction.ts",
+      handler: "handler",
+      memorySize: 128,
+      timeout: cdk.Duration.seconds(2),
+      bundling: {
+        minify: true,
+        sourceMap: false
+      },
+      tracing: lambda.Tracing.ACTIVE,
+      environment: {
+        EVENTS_DDB: props.eventsDdb.tableName,
+        INVOICE_WSAPI_ENDPOINT: wsApiEndPoint
+      },
+      layers: [invoiceWSConnectionLayer]
+    })
+    const eventsDdbPolicy = new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ["dynamodb:PutItem"],
+      resources: [props.eventsDdb.tableArn],
+      conditions: {
+        ['ForAllValues:StringLike']: {
+          'dynamodb:LeadingKeys': ['#invoice_*']
+        }
+      }
+    })
+    invoiceEventsHandler.addToRolePolicy(eventsDdbPolicy)
+    webSocketApi.grantManageConnections(invoiceEventsHandler)
+
+    //
+    const invoiceEventsDlq = new sqs.Queue(this, "InvoiceEventsDlq", {
+      queueName: "InvoiceEventsDlq"
+    })
+    invoiceEventsHandler.addEventSource(new lambdaEventSource.DynamoEventSource(invoicesDdb, {
+      startingPosition: lambda.StartingPosition.TRIM_HORIZON,
+      batchSize: 5,
+      bisectBatchOnError: true,
+      onFailure: new lambdaEventSource.SqsDlq(invoiceEventsDlq),
+      retryAttempts: 3
+
+    }))
   }
 }
