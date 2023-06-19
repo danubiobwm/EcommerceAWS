@@ -1,109 +1,123 @@
-import {
-  APIGatewayProxyEvent,
-  APIGatewayProxyResult,
-  Context,
-  S3Event,
-  S3EventRecord,
-} from "aws-lambda";
-import * as AWSRay from "aws-xray-sdk";
-import { ApiGatewayManagementApi, DynamoDB, S3 } from "aws-sdk";
-import { InvoiceTransactionStatus, InvoiceTransactionRepository } from '/opt/nodejs/invoiceTransaction';
-import { InvoiceWSService } from '/opt/nodejs/invoiceWSConnection';
-import { InvoiceFile, InvoiceRepository } from "/opt/nodejs/invoiceRepository";
+import { Context, S3Event, S3EventRecord } from "aws-lambda"
+import { ApiGatewayManagementApi, DynamoDB, EventBridge, S3 } from "aws-sdk"
+import * as AWSXRay from "aws-xray-sdk"
+import { InvoiceFile, InvoiceRepository } from "/opt/nodejs/invoiceRepository"
+import { InvoiceTransactionRepository, InvoiceTransactionStatus } from "/opt/nodejs/invoiceTransaction"
+import { InvoiceWSService } from "/opt/nodejs/invoiceWSConnection"
 
-const AWS = AWSRay.captureAWS(require("aws-sdk"));
+AWSXRay.captureAWS(require('aws-sdk'))
 
-const invoicesDdb = process.env.INVOICES_DDB!
-const invoicesWsApiEndpoint = process.env.INVOICES_WSAPI_ENDPOINT!.substring(6)
-
-
+const invoicesDdb = process.env.INVOICE_DDB!
+const invoicesWsApiEndpoint = process.env.INVOICE_WSAPI_ENDPOINT!.substring(6) 
+const auditBusName = process.env.AUDIT_BUS_NAME!
 
 const s3Client = new S3()
 const ddbClient = new DynamoDB.DocumentClient()
 const apigwManagementApi = new ApiGatewayManagementApi({
-  endpoint: invoicesWsApiEndpoint
+   endpoint: invoicesWsApiEndpoint
 })
+const eventBridgeClient = new EventBridge()
 
-const invoiceTransactionRepository = new InvoiceTransactionRepository(ddbClient, invoicesDdb);
-const invoiceWsService = new InvoiceWSService(apigwManagementApi);
-const invoicesRepository = new InvoiceRepository(ddbClient, invoicesDdb);
+const invoiceTransactionRepository = new InvoiceTransactionRepository(ddbClient, invoicesDdb)
+const invoiceWSService = new InvoiceWSService(apigwManagementApi)
+const invoiceRepository = new InvoiceRepository(ddbClient, invoicesDdb)
 
+export async function handler(event: S3Event, context: Context): 
+   Promise<void> {
+   const promises: Promise<void>[] = []
+   
+   //TODO - to be removed
+   console.log(event)
 
+   event.Records.forEach((record) => {
+      promises.push(processRecord(record))
+   })
 
+   await Promise.all(promises)
 
-export async function handler(event: S3Event, context: Context): Promise<void> {
-
-  const promises: Promise<void>[] = [];
-
-  //TODO: to be removed
-  console.log(event);
-
-  event.Records.forEach((record) => {
-    promises.push(processRecord(record))
-  });
-
-  await Promise.all(promises);
-
-  return
-
+   return
 }
 
 async function processRecord(record: S3EventRecord) {
+   const key = record.s3.object.key
 
-  const key = record.s3.object.key;
+   try {
+      const invoiceTransaction = await invoiceTransactionRepository.getInvoiceTransaction(key)
 
-  try {
+      if (invoiceTransaction.transactionStatus === InvoiceTransactionStatus.GENERATED) {
+         await Promise.all([invoiceWSService.sendInvoiceStatus(key, invoiceTransaction.connectionId, 
+            InvoiceTransactionStatus.RECEIVED),
+         invoiceTransactionRepository.updateInvoiceTransaction(key, InvoiceTransactionStatus.RECEIVED)])         
+      } else {
+         await invoiceWSService.sendInvoiceStatus(key, invoiceTransaction.connectionId, 
+            invoiceTransaction.transactionStatus)
+         console.error(`Non valid transaction status`)
+         return
+      }
 
-    const invoiceTransaction = await invoiceTransactionRepository.getInvoiceTransaction(key);
+      const object = await s3Client.getObject({
+         Key: key,
+         Bucket: record.s3.bucket.name
+      }).promise()
 
-    if (invoiceTransaction.transactionStatus === InvoiceTransactionStatus.GENERATED) {
-      await Promise.all([
-        invoiceWsService.sendInvoiceStatus(key, invoiceTransaction.connectionId, InvoiceTransactionStatus.RECEIVED),
-        invoiceTransactionRepository.updateInvoiceTransaction(key, InvoiceTransactionStatus.RECEIVED)
-      ])
+      const invoice = JSON.parse(object.Body!.toString('utf-8')) as InvoiceFile
+      console.log(invoice)
 
-      console.error(`Non valid transaction status`)
+      if (invoice.invoiceNumber.length >= 5) {
+         const createInvoicePromise = invoiceRepository.create({
+            pk: `#invoice_${invoice.customerName}`,
+            sk: invoice.invoiceNumber,
+            ttl: 0,
+            totalValue: invoice.totalValue,
+            productId: invoice.productId,
+            quantity: invoice.quantity,
+            transactionId: key,
+            createdAt: Date.now()
+         })
+   
+         const deleteObjectPromise = s3Client.deleteObject({
+            Key: key,
+            Bucket: record.s3.bucket.name
+         }).promise()
+   
+         const updateInvoicePromise = invoiceTransactionRepository.updateInvoiceTransaction(key, 
+            InvoiceTransactionStatus.PROCESSED)
+   
+         const sendStatusPromise = invoiceWSService.sendInvoiceStatus(key, invoiceTransaction.connectionId, 
+            InvoiceTransactionStatus.PROCESSED)
+   
+         await Promise.all([createInvoicePromise, deleteObjectPromise, updateInvoicePromise, sendStatusPromise])   
+      } else {
+         console.error(`Invoice import failed - non valid invoice number - TransactionId: ${key}`)
 
-    } else {
-      await invoiceWsService.sendInvoiceStatus(key, invoiceTransaction.connectionId, invoiceTransaction.transactionStatus)
-      console.error(`Non valid transaction status`)
-      return
-    }
+         const putEventPromise = eventBridgeClient.putEvents({
+            Entries: [
+               {
+                  Source: 'app.invoice',
+                  EventBusName: auditBusName,
+                  DetailType: 'invoice',
+                  Time: new Date(),
+                  Detail: JSON.stringify({
+                     errorDetail: 'FAIL_NO_INVOICE_NUMBER',
+                     info: {
+                        invoiceKey: key,
+                        customerName: invoice.customerName
+                     }
+                  })
+               }
+            ]
+         }).promise()
 
-    const object = await s3Client.getObject({
-      Key: key,
-      Bucket: record.s3.bucket.name
-    }).promise()
+         const sendStatusPromise = invoiceWSService.sendInvoiceStatus(key, invoiceTransaction.connectionId,
+               InvoiceTransactionStatus.NON_VALID_INVOICE_NUMBER)
 
-    const invoice = JSON.parse(object.Body!.toString('utf-8')) as InvoiceFile
+         const updateInvoicePromise = invoiceTransactionRepository.updateInvoiceTransaction(key,
+            InvoiceTransactionStatus.NON_VALID_INVOICE_NUMBER)
 
-    console.log(invoice)
-
-    const createInvoicePromise = invoicesRepository.create({
-      pk: `#invoice#${invoice.customerName}`,
-      sk: invoice.invoiceNumber,
-      ttl: 0,
-      totalValue: invoice.totalValue,
-      productId: invoice.productId,
-      quantity: invoice.quantity,
-      transactionId: key,
-      createdAt: Date.now(),
-    })
-
-    const deleteObjectPromise = s3Client.deleteObject({
-      Key: key,
-      Bucket: record.s3.bucket.name
-    }).promise()
-
-    const updateInvoicePromise = await invoiceTransactionRepository.updateInvoiceTransaction(key, InvoiceTransactionStatus.PROCESSED)
-
-    const sendStatusPromise = await invoiceWsService.sendInvoiceStatus(key, invoiceTransaction.connectionId, InvoiceTransactionStatus.PROCESSED)
-
-    await Promise.all([createInvoicePromise, deleteObjectPromise, updateInvoicePromise, sendStatusPromise])
-
-  } catch (error) {
-    console.error((<Error>error).message)
-  }
-
+         await Promise.all([sendStatusPromise, updateInvoicePromise, putEventPromise])
+      }
+      await invoiceWSService.disconnectClient(invoiceTransaction.connectionId)
+   } catch(error) {
+      console.log((<Error>error).message)
+   }
 }
-

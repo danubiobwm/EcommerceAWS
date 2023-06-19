@@ -1,12 +1,9 @@
-import { SNSEvent, Context } from "aws-lambda";
+import { SNSEvent, Context } from "aws-lambda"
 
-export async function handler(
-  event: SNSEvent,
-  context: Context
-): Promise<void> {
+export async function handler(event: SNSEvent, context: Context): Promise<void> {
+   event.Records.forEach((record) => {
+      console.log(record.Sns)
+   })
 
-  event.Records.forEach((record) => {
-    console.log(record.Sns)
-  })
-  return
+   return
 }

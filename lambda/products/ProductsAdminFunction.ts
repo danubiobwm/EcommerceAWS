@@ -1,8 +1,9 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from "aws-lambda";
 import { Product, ProductRepository } from "/opt/nodejs/productsLayer";
-import { DynamoDB, Lambda } from "aws-sdk"
+import { CognitoIdentityServiceProvider, DynamoDB, Lambda } from "aws-sdk"
 import { ProductEvent, ProductEventType } from "/opt/nodejs/productEventsLayer";
 import * as AWSXRay from "aws-xray-sdk"
+import { AuthInfoService } from "/opt/nodejs/authUserInfo";
 
 AWSXRay.captureAWS(require("aws-sdk"))
 
@@ -11,8 +12,11 @@ const productEventsFunctionName = process.env.PRODUCT_EVENTS_FUNCTION_NAME!
 
 const ddbClient = new DynamoDB.DocumentClient()
 const lambdaClient = new Lambda()
+const cognitoIdentityServiceProvider = new CognitoIdentityServiceProvider()
 
 const productRepository = new ProductRepository(ddbClient, productsDdb)
+
+const authInfoService = new AuthInfoService(cognitoIdentityServiceProvider)
 
 export async function handler(event: APIGatewayProxyEvent, 
    context: Context): Promise<APIGatewayProxyResult> {
@@ -22,6 +26,8 @@ export async function handler(event: APIGatewayProxyEvent,
 
    console.log(`API Gateway RequestId: ${apiRequestId} - Lambda RequestId: ${lambdaRequestId}`)
 
+   const userEmail = await authInfoService.getUserInfo(event.requestContext.authorizer)
+
    if (event.resource === "/products") {
       console.log("POST /products")
       const product = JSON.parse(event.body!) as Product
@@ -29,7 +35,7 @@ export async function handler(event: APIGatewayProxyEvent,
 
       const response = await sendProductEvent(productCreated, 
          ProductEventType.CREATED,
-         "matilde@siecola.com.br", lambdaRequestId)
+         userEmail, lambdaRequestId)
       console.log(response)
 
       return {
@@ -46,7 +52,7 @@ export async function handler(event: APIGatewayProxyEvent,
 
             const response = await sendProductEvent(productUpdated, 
                ProductEventType.UPDATED,
-               "doralice@siecola.com.br", lambdaRequestId)
+               userEmail, lambdaRequestId)
             console.log(response)
       
             return {
@@ -66,7 +72,7 @@ export async function handler(event: APIGatewayProxyEvent,
 
             const response = await sendProductEvent(product, 
                ProductEventType.DELETED,
-               "hannah@siecola.com.br", lambdaRequestId)
+               userEmail, lambdaRequestId)
             console.log(response)
 
             return {

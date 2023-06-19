@@ -40,7 +40,7 @@ export class OrderRepository {
    async getAllOrders(): Promise<Order[]> {
       const data = await this.ddbClient.scan({
          TableName: this.ordersDdb,
-         ProjectionExpression: "pk, sk, createAt, shipping, billing",
+         ProjectionExpression: "pk, sk, createdAt, shipping, billing"
       }).promise()
       return data.Items as Order[]
    }
@@ -51,8 +51,8 @@ export class OrderRepository {
          KeyConditionExpression: "pk = :email",
          ExpressionAttributeValues: {
             ":email": email
-         },
-         ProjectionExpression: "pk, sk, createAt, shipping, billing",
+         },         
+         ProjectionExpression: "pk, sk, createdAt, shipping, billing"
       }).promise()
       return data.Items as Order[]
    }
@@ -79,12 +79,12 @@ export class OrderRepository {
             pk: email,
             sk: orderId
          },
-         ReturnValues: "ALL_OLD"
+         ReturnValues: "ALL_OLD"          
       }).promise()
       if (data.Attributes) {
          return data.Attributes as Order
       } else {
          throw new Error ('Order not found')
       }
-   }
+   } 
 }

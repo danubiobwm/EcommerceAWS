@@ -1,14 +1,15 @@
-import { APIGatewayProxyEvent, Context, APIGatewayProxyResult } from 'aws-lambda';
-import * as AWSXRay from 'aws-xray-sdk';
+import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from "aws-lambda"
+import * as AWSXRay from "aws-xray-sdk"
 
+AWSXRay.captureAWS(require('aws-sdk'))
 
-AWSXRay.captureAWS(require("aws-sdk"))
+export async function handler(event: APIGatewayProxyEvent, context: Context): 
+   Promise<APIGatewayProxyResult> {
+      
+      console.log(event)
 
-export async function handle(event: APIGatewayProxyEvent, context:Context):
-Promise<APIGatewayProxyResult> {
-  console.log(event);
-  return {
-    statusCode: 200,
-    body: 'ok'
-  }
-}
+      return {
+         statusCode: 200,
+         body: 'OK'
+      }
+   }

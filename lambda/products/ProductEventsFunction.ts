@@ -10,7 +10,6 @@ const ddbClient = new DynamoDB.DocumentClient()
 
 export async function handler(event: ProductEvent, 
    context: Context, callback: Callback): Promise<void> {
-   //TODO - to be removed
    console.log(event)
 
    console.log(`Lambda requestId: ${context.awsRequestId}`)
